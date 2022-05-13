@@ -37,13 +37,13 @@ function getClientToken($clientId, $clientSecret)
     $authorization = "Basic " . base64_encode($clientId . ':' . $clientSecret);
 
     $curl = curl_init();
+
     curl_setopt($curl, CURLOPT_URL, $url);
     curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($curl, CURLOPT_HTTPHEADER, array(
         "Content-Type: application/x-www-form-urlencoded",
         "Authorization: $authorization"
     ));
-
     curl_setopt($curl, CURLOPT_POST, true);
     curl_setopt($curl, CURLOPT_POSTFIELDS, "grant_type=client_credentials&scope&default");
 
@@ -69,6 +69,7 @@ function getCryptoTokenData($clientId, $productId, $accessToken, $dtim, $reqNo)
     $authorization = "bearer " . base64_encode($accessToken . ":" . $current_timestamp . ":" . $clientId);
 
     $curl = curl_init();
+
     curl_setopt($curl, CURLOPT_URL, $url);
     curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($curl, CURLOPT_HTTPHEADER, array(
@@ -76,7 +77,6 @@ function getCryptoTokenData($clientId, $productId, $accessToken, $dtim, $reqNo)
         "Authorization: $authorization",
         "productID: $productId",
     ));
-
     curl_setopt($curl, CURLOPT_POST, true);
     curl_setopt($curl, CURLOPT_POSTFIELDS, json_encode(array(
         "dataHeader" => array("CNTY_CD" => "ko"),
@@ -109,6 +109,23 @@ function generateSymmetricKey($dtim, $reqNo, $cryptoToken)
     return base64_encode($hashed_value);
 }
 
+// 대칭키 파싱
+function parseSymetricKey($symmetricKey)
+{
+    return array(
+        'key' => substr($symmetricKey, 0, 16),
+        'iv' => substr($symmetricKey, strlen($symmetricKey) - 16, 16),
+        'hmacKey' => substr($symmetricKey, 0, 32)
+    );
+}
+
+// 무결성키 생성
+function generateIntegrityValue($encData, $hmacKey)
+{
+    $hashedValue = hash_hmac("sha256", $encData, $hmacKey, true);
+    return base64_encode($hashedValue);
+}
+
 // 요청 정보 가져오기
 function getRequestData()
 {
@@ -119,7 +136,7 @@ function getRequestData()
 
     // Todo: 리퀘스트 번호 중복 방지해야 함
     $reqNo = 'REQ' . $dtim . rand(1000, 9999);
-    
+
     // 기관 토큰 발급
     $clientToken = $CLIENT_TOKEN || getClientToken($CLIENT_ID, $CLIENT_SECRET);
 
@@ -131,11 +148,9 @@ function getRequestData()
 
     // 대칭키 생성
     $symmetricKey = generateSymmetricKey($dtim, $reqNo, $cryptoToken);
+    $keyData = parseSymetricKey($symmetricKey);
 
-    $key = substr($symmetricKey, 0, 16);
-    $iv = substr($symmetricKey, strlen($symmetricKey) - 16, 16);
-    $hmacKey = substr($symmetricKey, 0, 32);
-
+    // 요청 데이터 생성
     $reqData = json_encode(array(
         'requestno' => $reqNo,
         'returnurl' => $RETURN_URL,
@@ -145,10 +160,11 @@ function getRequestData()
         'popupyn' => 'Y',
     ));
 
-    $output = openssl_encrypt($reqData, "AES-128-CBC", $key, OPENSSL_RAW_DATA, $iv);
-    $encData = base64_encode($output);
+    // 데이터 암호화
+    $encData = base64_encode(openssl_encrypt($reqData, "AES-128-CBC", $keyData['key'], OPENSSL_RAW_DATA, $keyData['iv']));
 
-    $integrityValue = base64_encode(hash_hmac("sha256", $encData, $hmacKey, true));
+    // 무결성키 생성
+    $integrityValue = generateIntegrityValue($encData, $keyData['hmacKey']);
 
     return array(
         'tokenVersionId' => $tokenVersionId,
@@ -159,18 +175,18 @@ function getRequestData()
 }
 
 // 응답 정보 가져오기
-function getResponsData($encData, $integrityValue, $symmetricKey)
+function getResponseData($encData, $integrityValue, $symmetricKey)
 {
-    $key = substr($symmetricKey, 0, 16);
-    $iv = substr($symmetricKey, strlen($symmetricKey) - 16, 16);
-    $hmacKey = substr($symmetricKey, 0, 32);
-    $resData = openssl_decrypt(base64_decode($encData), 'aes-128-cbc', $key, OPENSSL_RAW_DATA, $iv);
-
-    if ($integrityValue != base64_encode(hash_hmac("sha256", $encData, $hmacKey, true))) {
+    $keyData = parseSymetricKey($symmetricKey);
+    if ($integrityValue != generateIntegrityValue($encData, $keyData['hmacKey'])) {
         return null;
     }
 
+    // 데이터 복호화
+    $decryptedData = openssl_decrypt(base64_decode($encData), 'aes-128-cbc', $keyData['key'], OPENSSL_RAW_DATA, $keyData['iv']);
+
     // UTF8 인코딩
-    $resData = preg_replace('/[\x00-\x1F\x80-\xFF]/', '', $resData);
-    return json_decode($resData, true);
+    $decryptedData = preg_replace('/[\x00-\x1F\x80-\xFF]/', '', $decryptedData);
+
+    return json_decode($decryptedData, true);
 }

@@ -4,7 +4,7 @@ session_start_samesite();
 
 header("Content-type: text/html; charset=utf-8");
 
-$data = getResponsData($_GET['enc_data'], $_GET['integrity_value'], $_SESSION['NICE_ID_SYMMETRIC_KEY']);
+$data = getResponseData($_GET['enc_data'], $_GET['integrity_value'], $_SESSION['NICE_ID_SYMMETRIC_KEY']);
 if (!$data) {
     echo '데이터 불러오기 실패';
     return;
