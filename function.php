@@ -65,8 +65,8 @@ function getCryptoTokenData($clientId, $productId, $accessToken, $dtim, $reqNo)
     $url = "https://svc.niceapi.co.kr:22001/digital/niceid/api/v1.0/common/crypto/token";
 
     $datetime = new DateTime();
-    $current_timestamp = $datetime->getTimestamp();
-    $authorization = "bearer " . base64_encode($accessToken . ":" . $current_timestamp . ":" . $clientId);
+    $currentTimestamp = $datetime->getTimestamp();
+    $authorization = "bearer " . base64_encode($accessToken . ":" . $currentTimestamp . ":" . $clientId);
 
     $curl = curl_init();
 
@@ -105,8 +105,8 @@ function getCryptoTokenData($clientId, $productId, $accessToken, $dtim, $reqNo)
 // 대칭키 생성
 function generateSymmetricKey($dtim, $reqNo, $cryptoToken)
 {
-    $hashed_value = hash("sha256", $dtim . $reqNo . $cryptoToken, true);
-    return base64_encode($hashed_value);
+    $hashedValue = hash("sha256", $dtim . $reqNo . $cryptoToken, true);
+    return base64_encode($hashedValue);
 }
 
 // 대칭키 파싱
